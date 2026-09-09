@@ -3,6 +3,8 @@ harness opencode
 probe   opencode
 root    "${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
 
+# Redundant with shared.sh: this tool reads ~/.agents/skills natively.
+# Keep one or the other, not both.
 link_dir  skills    "$root/skills"
 link_dir  commands  "$root/command"
 link_dir  agents    "$root/agent"

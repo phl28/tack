@@ -8,6 +8,8 @@ harness codex
 probe   codex
 root    "$HOME/.codex"
 
+# Redundant with shared.sh: this tool reads ~/.agents/skills natively.
+# Keep one or the other, not both.
 link_dir  skills    "$root/skills"
 link_dir  commands  "$root/prompts"
 link_file AGENTS.md "$root/AGENTS.md"

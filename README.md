@@ -43,10 +43,13 @@ symlink cannot serve all three. One canonical `settings.json` + `mcp.json` is
 projected into each harness's own shape. Keys the harness writes back itself
 (codex's per-project trust levels) are carried through untouched.
 
-## Harnesses are plugins, not built-ins
+## tack supports no agent tool
 
-tack ships no opinion about which agent tools exist. Every harness is a small
-bash file that calls a DSL. This is the whole of Claude Code support:
+Not "supports many" — *none*. There is no built-in list, no registry, and nothing
+to upstream. A harness is a file **you** put in your own config directory, and one
+tack has never heard of works exactly as well as one it has.
+
+A plugin is a small bash file calling a DSL. This is a complete integration:
 
 ```bash
 harness claude
@@ -63,7 +66,7 @@ config_mcp mcpServers
 config_map theme theme
 ```
 
-Codex needs more, and all of it stays in the plugin — the engine learns nothing:
+Awkward tools stay awkward *in the plugin*; the engine learns nothing:
 
 ```bash
 harness codex
@@ -82,17 +85,20 @@ config_preserve projects                   # codex writes this back itself
 Because plugins are ordinary bash, a harness that needs something no declaration
 covers can define `pre_sync()` / `post_sync()` and do it directly.
 
-**Supporting a new harness never requires a change to tack.** Drop a file in
-`$TACK_HOME/harnesses/` and it is picked up; name it after a stock plugin and
-yours replaces it entirely. The ones in this repo are conveniences, not a
-contract.
+`tack add` copies a starting point out of `examples/harnesses/` (or a path, or a
+URL) into your config, where it becomes yours to edit — tack will never update or
+second-guess it. Those examples are unmaintained templates that were accurate
+when written, **not supported integrations**. When a tool changes its layout you
+fix your own plugin instead of waiting on a release.
+
+Full DSL reference: [docs/harness-plugins.md](docs/harness-plugins.md).
 
 ## The two halves
 
 | | What it is | Where it lives |
 |---|---|---|
-| **The tool** | this repo — engine, DSL, stock plugins | installed once per machine |
-| **Your config** | `tack.conf`, `core/`, your own plugins | `~/.config/tack`, a repo *you* own |
+| **The tool** | this repo — engine, DSL, example plugins | installed once per machine |
+| **Your config** | `tack.conf`, `core/`, your harness plugins | `~/.config/tack`, a repo *you* own |
 
 Nothing personal lives in the tool, and no tool code lives in your config. You
 fork or install this repo, then point it at your own directory.
@@ -103,6 +109,7 @@ fork or install this repo, then point it at your own directory.
 git clone https://github.com/you/tack ~/.local/share/tack
 ln -s ~/.local/share/tack/tack ~/.local/bin/tack
 tack init          # scaffolds ~/.config/tack
+tack add           # list example plugins; `tack add codex` copies one in
 tack sync
 ```
 
@@ -120,7 +127,7 @@ tack sync
     AGENTS.md         one prose file, linked as CLAUDE.md / GEMINI.md / AGENTS.md
     settings.json     canonical config, projected per harness
     mcp.json          MCP servers, declared once
-  harnesses/          your own plugins, or overrides of the stock ones
+  harnesses/          your harness plugins — tack ships none
   local/              gitignored: secrets.env, profile, machine-only plugins
 ```
 
@@ -165,6 +172,30 @@ Values come from `local/secrets.env` (`KEY=value`, gitignored) at render time, s
 the repo stays safe to keep on a host your work machine can actually reach.
 `tack doctor` greps `core/` for anything that looks like a leaked key.
 
+## Check first whether you need a plugin at all
+
+Some harnesses already read the same directory. `~/.agents/skills/` is read
+natively by **Codex, opencode and pi**, so one `link_dir` into it serves all
+three — no plugin per tool, no duplication:
+
+```bash
+harness shared
+probe   --always
+link_dir skills "$HOME/.agents/skills"
+```
+
+Claude Code is the holdout: its skill paths are hardcoded to `.claude/skills/`
+and even `CLAUDE_CONFIG_DIR` is ignored for skills lookup, so it needs its own
+links — it does follow symlinks placed there, which is the seam tack uses.
+
+`AGENTS.md` is in better shape: standardised and read by 30+ agents, with Claude
+Code again the exception (`CLAUDE.md`).
+
+The full table, with sources and caveats, is in
+[docs/shared-directories.md](docs/shared-directories.md). Where tools agree, link
+once and stop; where they do not, the difference is a few lines in a plugin you
+control.
+
 ## The highest-leverage part
 
 Put real capability in `core/bin/` and put it on `$PATH`. Every harness can run a
@@ -184,7 +215,8 @@ tack status                  what each harness has linked
 tack doctor                  dangling links, leaked secrets, missing local config
 tack init                    scaffold a config directory you can commit
 tack adopt <path> [subdir]   move an existing file/dir into core/ and link it back
-tack harnesses               list plugins and where each was found
+tack add [name|path|url]     copy a harness plugin into your config
+tack harnesses               list the plugins you have, and where each was found
 
   -n, --dry-run     show what would change, touch nothing
   -p, --profile P   override profile

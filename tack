@@ -32,9 +32,12 @@ HARNESS_DIRS=()
 
 [[ -f "$TACK_HOME/tack.conf" ]] && source "$TACK_HOME/tack.conf"
 
-# Stock plugins ship with the tool; the user's own come after so a same-named
-# file overrides the stock one entirely.
-HARNESS_DIRS=("$TOOL/harnesses" "$TACK_HOME/harnesses" "$TACK_HOME/local/harnesses" "${HARNESS_DIRS[@]:-}")
+# Harness plugins are YOURS. tack ships none: it supports no particular agent
+# tool, it runs whatever plugins you put here. Search order, later wins:
+#   harnesses/         committed, shared between your machines
+#   local/harnesses/   gitignored, this machine only
+# plus anything you add to HARNESS_DIRS in tack.conf.
+HARNESS_DIRS=("$TACK_HOME/harnesses" "$TACK_HOME/local/harnesses" "${HARNESS_DIRS[@]:-}")
 
 PROFILE="${TACK_PROFILE:-$PROFILE}"
 [[ -z "$PROFILE" && -f "$TACK_HOME/local/profile" ]] && PROFILE="$(<"$TACK_HOME/local/profile")"
@@ -143,6 +146,56 @@ cmd_adopt() {
   note "link" "$path"
 }
 
+# Copy a harness plugin into your config so you can edit it. The source can be
+# an example bundled with the tool, a path, or a URL -- none of them are
+# privileged, and the copy is yours to change afterwards.
+cmd_add() {
+  local src="${1:-}" name dest
+  [[ -n "$src" ]] || { cmd_add_list; return 0; }
+
+  name="$(basename "$src" .sh)"
+  dest="$TACK_HOME/harnesses/$name.sh"
+  [[ -e "$dest" ]] && die "$dest already exists -- edit it, or delete it first"
+  ((DRY)) && { say "would write $dest"; return 0; }
+  mkdir -p "$TACK_HOME/harnesses"
+
+  case "$src" in
+    http://*|https://*)
+      command -v curl >/dev/null || die "curl needed to fetch $src"
+      curl -fsSL "$src" -o "$dest" || die "could not fetch $src"
+      ;;
+    */*)
+      [[ -f "$src" ]] || die "no such file: $src"
+      cp "$src" "$dest"
+      ;;
+    *)
+      [[ -f "$TOOL/examples/harnesses/$name.sh" ]] \
+        || die "no example named '$name' -- 'tack add' lists them, or pass a path or URL"
+      cp "$TOOL/examples/harnesses/$name.sh" "$dest"
+      ;;
+  esac
+
+  note "add" "$dest"
+  say "  edit it to taste, then: tack sync"
+}
+
+cmd_add_list() {
+  say "Harness plugins live in ${C_B}$TACK_HOME/harnesses${C_0} and are yours to write."
+  say "tack supports no agent tool on its own -- a plugin is how you teach it one."
+  say ""
+  say "Copy a starting point with ${C_B}tack add <name|path|url>${C_0}. Bundled examples:"
+  local f n
+  shopt -s nullglob
+  for f in "$TOOL/examples/harnesses"/*.sh; do
+    n="$(basename "$f" .sh)"
+    printf '  %-10s %s\n' "$n" "$C_DIM$(sed -n '1s/^# *//p' "$f")$C_0"
+  done
+  shopt -u nullglob
+  say ""
+  say "These are unmaintained copy-paste templates, not supported integrations."
+  say "See ${C_B}docs/harness-plugins.md${C_0} to write your own -- it is about six lines."
+}
+
 cmd_init() {
   [[ -e "$TACK_HOME/tack.conf" ]] && die "$TACK_HOME/tack.conf already exists"
   mkdir -p "$CORE"/{skills,commands,agents,bin,hooks} "$TACK_HOME"/{harnesses,local/harnesses}
@@ -152,7 +205,10 @@ cmd_init() {
   cp -n "$TOOL/examples/core/AGENTS.md" "$CORE/AGENTS.md" 2>/dev/null
   cp -n "$TOOL/examples/gitignore" "$TACK_HOME/.gitignore" 2>/dev/null
   say "initialised ${C_OK}$TACK_HOME${C_0}"
-  say "  put your skills in $CORE/skills, then: tack sync"
+  say "  1. add a harness plugin so tack knows a tool:  tack add"
+  say "  2. put your skills in $CORE/skills"
+  say "  3. tack sync"
+  say ""
   say "  this directory is what you commit and share between machines"
 }
 
@@ -164,7 +220,9 @@ tack -- one set of agent tooling, every harness
   doctor                  dangling links, leaked secrets, missing local config
   init                    scaffold a config directory you can commit
   adopt <path> [subdir]   move an existing file/dir into core/ and link it back
-  harnesses               list plugins and where each was found
+  add [name|path|url]     copy a harness plugin into your config (no args lists
+                          the bundled examples)
+  harnesses               list the plugins you have, and where each was found
 
 options
   -n, --dry-run           show what would change, touch nothing
@@ -203,6 +261,7 @@ case "$CMD" in
   doctor)    cmd_doctor;;
   init)      cmd_init;;
   adopt)     cmd_adopt "${ARGS[@]}";;
+  add)       cmd_add "${ARGS[@]:-}";;
   harnesses) cmd_harnesses;;
   ""|help)   usage;;
   *)         die "unknown command: $CMD (try 'tack help')";;
