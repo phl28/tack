@@ -57,6 +57,9 @@ die()  { printf '%serror%s %s\n' "$C_ERR" "$C_0" "$*" >&2; exit 1; }
 
 source "$LIB/dsl.sh"
 source "$LIB/engine.sh"
+source "$LIB/new.sh"
+source "$LIB/verify.sh"
+source "$LIB/git.sh"
 
 # Later dirs win: collect by basename, last one found is used.
 resolve_plugins() {
@@ -87,6 +90,7 @@ cmd_status() {
   say "profile:  $PROFILE"
   say "config:   $TACK_HOME"
   say "core:     $CORE"
+  git_status_line
   say ""
   local f pair dest t c
   while IFS= read -r f; do
@@ -154,27 +158,41 @@ cmd_add() {
   [[ -n "$src" ]] || { cmd_add_list; return 0; }
 
   name="$(basename "$src" .sh)"
+  [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] || die "bad plugin name: $name"
   dest="$TACK_HOME/harnesses/$name.sh"
   [[ -e "$dest" ]] && die "$dest already exists -- edit it, or delete it first"
   ((DRY)) && { say "would write $dest"; return 0; }
-  mkdir -p "$TACK_HOME/harnesses"
 
+  # Fetch to a temp file first. Nothing lands in the config directory until it
+  # has been inspected, so a bad download cannot leave a plugin behind.
+  local tmp; tmp="$(mktemp "${TMPDIR:-/tmp}/tack-plugin.XXXXXX")" || die "mktemp failed"
+  trap 'rm -f "$tmp"' RETURN
+
+  local origin="$src"
   case "$src" in
     http://*|https://*)
       command -v curl >/dev/null || die "curl needed to fetch $src"
-      curl -fsSL "$src" -o "$dest" || die "could not fetch $src"
+      curl -fsSL --proto '=https' --max-time 30 "$src" -o "$tmp" || die "could not fetch $src"
       ;;
-    */*)
+    */*|./*|~/*)
       [[ -f "$src" ]] || die "no such file: $src"
-      cp "$src" "$dest"
+      cp "$src" "$tmp"
       ;;
     *)
       [[ -f "$TOOL/examples/harnesses/$name.sh" ]] \
         || die "no example named '$name' -- 'tack add' lists them, or pass a path or URL"
-      cp "$TOOL/examples/harnesses/$name.sh" "$dest"
+      cp "$TOOL/examples/harnesses/$name.sh" "$tmp"
+      origin="example: $name"
       ;;
   esac
 
+  # `tack sync` sources this file, so installing one is a decision to run it.
+  say ""
+  hdr "Reviewing $origin"
+  tack_review_plugin "$tmp" "$origin" || die "not installed"
+
+  mkdir -p "$TACK_HOME/harnesses"
+  cp "$tmp" "$dest"
   note "add" "$dest"
   say "  edit it to taste, then: tack sync"
 }
@@ -194,6 +212,7 @@ cmd_add_list() {
   say ""
   say "These are unmaintained copy-paste templates, not supported integrations."
   say "See ${C_B}docs/harness-plugins.md${C_0} to write your own -- it is about six lines."
+  say "Or answer a few questions instead: ${C_B}tack new${C_0}"
 }
 
 cmd_init() {
@@ -205,11 +224,15 @@ cmd_init() {
   cp -n "$TOOL/examples/core/AGENTS.md" "$CORE/AGENTS.md" 2>/dev/null
   cp -n "$TOOL/examples/gitignore" "$TACK_HOME/.gitignore" 2>/dev/null
   say "initialised ${C_OK}$TACK_HOME${C_0}"
-  say "  1. add a harness plugin so tack knows a tool:  tack add"
-  say "  2. put your skills in $CORE/skills"
-  say "  3. tack sync"
   say ""
-  say "  this directory is what you commit and share between machines"
+  say "  ${C_B}1.${C_0} teach tack a tool      ${C_DIM}tack new${C_0}   (or copy one: ${C_DIM}tack add${C_0})"
+  say "  ${C_B}2.${C_0} bring in what you have ${C_DIM}tack adopt ~/.claude/skills/my-skill${C_0}"
+  say "  ${C_B}3.${C_0} link it everywhere     ${C_DIM}tack sync${C_0}"
+  say "  ${C_B}4.${C_0} share it               ${C_DIM}tack remote git@github.com:you/tack-config.git${C_0}"
+  say "                            ${C_DIM}tack push${C_0}"
+  say ""
+  say "  ${C_DIM}On your next machine: install tack, clone that repo to $TACK_HOME,"
+  say "  and run ${C_0}tack sync${C_DIM}. Thereafter ${C_0}tack push${C_DIM} / ${C_0}tack pull${C_DIM}.${C_0}"
 }
 
 usage() { cat <<'U'
@@ -220,6 +243,12 @@ tack -- one set of agent tooling, every harness
   doctor                  dangling links, leaked secrets, missing local config
   init                    scaffold a config directory you can commit
   adopt <path> [subdir]   move an existing file/dir into core/ and link it back
+  push [message]          commit everything and push it to your remote
+  pull                    pull your other machines' changes, then re-link
+  remote [url]            show or set where your config is shared (a private
+                          GitHub repo works well)
+
+  new [name]              write a harness plugin by answering questions
   add [name|path|url]     copy a harness plugin into your config (no args lists
                           the bundled examples)
   harnesses               list the plugins you have, and where each was found
@@ -262,6 +291,10 @@ case "$CMD" in
   init)      cmd_init;;
   adopt)     cmd_adopt "${ARGS[@]}";;
   add)       cmd_add "${ARGS[@]:-}";;
+  new)       cmd_new "${ARGS[@]:-}";;
+  push)      cmd_push "${ARGS[*]:-}";;
+  pull)      cmd_pull;;
+  remote)    cmd_remote "${ARGS[@]:-}";;
   harnesses) cmd_harnesses;;
   ""|help)   usage;;
   *)         die "unknown command: $CMD (try 'tack help')";;

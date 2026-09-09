@@ -3,8 +3,8 @@
 Before writing a plugin, check whether the tool reads a path another tool already
 reads. Where they do, you need no plugin for it — or a much smaller one.
 
-Researched September 2026. Verify against current docs before relying on it;
-this is exactly the kind of thing that changes.
+Checked September 2026. Verify against the tool's own docs before relying on any
+of it — layouts change, and tools get retired and replaced.
 
 ## Skills: `~/.agents/skills/` is real, and most tools read it
 
@@ -14,25 +14,16 @@ this is exactly the kind of thing that changes.
 | **opencode** | **yes** (also `~/.claude/skills/`) | `~/.config/opencode/skills/` |
 | **pi** | **yes** | `~/.pi/agent/skills/` |
 | **Claude Code** | **no** | `~/.claude/skills/` |
-| **Antigravity CLI** | no (global) | `~/.gemini/skills/`, `~/.gemini/antigravity-cli/skills/` |
 
 So for Codex, opencode and pi, one directory genuinely serves all three. Point
 your skills at `~/.agents/skills/` and they are done — no linking, no
 duplication, no plugin per tool.
 
 Claude Code is the holdout: its skill paths are hardcoded to `.claude/skills/`,
-with open feature requests for a configurable path
-([#22902](https://github.com/anthropics/claude-code/issues/22902),
-[#33957](https://github.com/anthropics/claude-code/issues/33957)) and a bug where
-even `CLAUDE_CONFIG_DIR` is ignored for skills lookup
-([#31649](https://github.com/anthropics/claude-code/issues/31649)).
+and even `CLAUDE_CONFIG_DIR` does not move skills lookup.
 
 It does, however, **follow symlinks** placed in its skills directory, and
 deduplicates when several paths resolve to the same target. That is the seam.
-
-Antigravity reads `.agents/skills/` at workspace scope but not `~/.agents` globally.
-Globally it splits by audience: `~/.gemini/skills/` is shared across all
-Antigravity tools, `~/.gemini/antigravity-cli/skills/` is CLI-only.
 
 ### What this means for your config
 
@@ -52,14 +43,14 @@ probe   claude
 link_dir skills "$HOME/.claude/skills"
 ```
 
-Two plugins, four tools. If Claude Code ships a configurable skills path, delete
-the second one.
+Two plugins, several tools. If Claude Code ships a configurable skills path,
+delete the second one.
 
 ## AGENTS.md: solved, except for Claude Code
 
 `AGENTS.md` was standardised in August 2025 and donated to the Linux Foundation's
-Agentic AI Foundation in December 2025. 30+ agents read it, including Codex,
-opencode, pi, Cursor, Copilot, Zed, Aider, Windsurf, Jules and Devin.
+Agentic AI Foundation in December 2025. 30+ agents read it, Codex, opencode and
+pi among them.
 
 Claude Code still loads `CLAUDE.md`. Two ways around it, both fine:
 
@@ -85,27 +76,9 @@ are useful for isolating a work profile from a personal one, not for sharing.
 
 No shared location and no cross-tool standard. Every harness declares servers in
 its own file under its own key — `mcpServers` for Claude Code, `mcp_servers` for
-Codex, `mcp` for opencode — in JSON or TOML depending on the tool. Antigravity
-does not put them in its settings file at all: they live in a dedicated
-`~/.gemini/config/mcp_config.json`. This is the case rendering exists for.
-
-## A note on Gemini CLI
-
-Google retired Gemini CLI on **18 June 2026**, announced at I/O on 19 May 2026,
-consolidating developer tooling under the Antigravity brand. There was no soft
-deprecation and no automatic migration; Gemini Code Assist Standard and
-Enterprise licences were unaffected.
-
-Antigravity CLI is not a drop-in successor as far as paths go. It keeps `~/.gemini`
-as a root but rearranges everything under it — skills at `~/.gemini/skills/`, MCP
-in a dedicated `~/.gemini/config/mcp_config.json` rather than inline in a settings
-file. Anything written for Gemini CLI's layout is simply wrong for it.
-
-There is deliberately no example plugin for either: the Gemini CLI one would
-target a dead tool, and an Antigravity one would be a guess at a young layout
-that has already moved once. If you use Antigravity, write the plugin from its
-current docs — that is the six-line case in
-[harness-plugins.md](harness-plugins.md).
+Codex, `mcp` for opencode — in JSON or TOML depending on the tool. Some keep them
+in a separate file from their settings entirely. This is the case rendering
+exists for.
 
 ## Reading the table honestly
 
@@ -118,14 +91,3 @@ Which is the argument for a linking tool rather than betting everything on the
 convention: where tools agree, link once into the shared path and stop; where
 they do not, the difference is a few lines in a plugin you control.
 
-## Sources
-
-- [AGENTS.md guide (2026)](https://www.morphllm.com/agents-md-guide) · [complete guide](https://codersera.com/blog/agents-md-complete-guide-2026/)
-- [Agent Skills specification](https://agentskills.io/specification) — format only, not location
-- [Agent Skills share a format but not a distribution model](https://www.thedroptimes.com/71574/agent-skills-distribution-conventions)
-- [opencode skills docs](https://opencode.ai/docs/skills/) · [opencode config](https://opencode.ai/docs/config/)
-- [pi skills docs](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md)
-- [Codex skills locations](https://knightli.com/en/2026/04/29/difference-between-global-and-project-codex-skills/) · [codex#22590](https://github.com/openai/codex/issues/22590)
-- [Claude Code skills docs](https://code.claude.com/docs/en/skills) · [issue #22902](https://github.com/anthropics/claude-code/issues/22902) · [#31649](https://github.com/anthropics/claude-code/issues/31649) · [#33957](https://github.com/anthropics/claude-code/issues/33957)
-- [Antigravity MCP docs](https://antigravity.google/docs/cli/mcp/) · [Where does Antigravity look for Agent Skills?](https://medium.com/google-cloud/where-does-antigravity-look-for-agent-skills-a703518d68c5) · [Configuring MCP servers and skills for Antigravity](https://medium.com/google-cloud/configuring-mcp-servers-and-skills-for-antigravity-cli-and-ide-a938c7eebb78)
-- [Transitioning Gemini CLI to Antigravity CLI](https://github.com/google-gemini/gemini-cli/discussions/27274) — the retirement announcement

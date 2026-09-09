@@ -134,8 +134,18 @@ config_preserve projects                   # codex writes trust levels back here
 
 ## Getting started
 
-`tack add` lists the example plugins bundled with the tool and copies one into
-your config:
+The quickest way is to let tack ask:
+
+```sh
+tack new
+```
+
+It asks what the tool is called, how to tell whether it is installed, where its
+config directory is and what it reads, checking each answer against what is
+actually on disk, then writes a commented plugin for you to edit.
+
+`tack add` copies an existing one instead — the examples bundled with the tool, a
+path, or a URL:
 
 ```sh
 tack add            # list them
@@ -148,6 +158,14 @@ Those examples are unmaintained starting points that were accurate when written,
 not supported integrations. Once copied, the file is yours — tack will never
 update or second-guess it. When a tool changes its layout, you fix your own
 plugin instead of waiting on anyone.
+
+`tack sync` sources every plugin, so installing one is a decision to run its
+code. `tack add` inspects a plugin before it lands: a file that is nothing but
+tack verbs installs quietly, one that defines `pre_sync`/`post_sync` is shown to
+you and needs confirming, and one that touches the network, `eval`, `rm -rf` or
+credential paths is flagged line by line and defaults to no. With no terminal to
+confirm at, anything past declarative is refused. It makes you read the code; it
+does not make the code safe.
 
 ## Before you write one
 
