@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# tack -- keep one harness-agnostic set of skills, prompts and tools in sync
+# across every agent CLI on a machine.
+#
+# This program is pure mechanism. It ships no opinion about which agent tools
+# exist: every harness is a plugin (see lib/dsl.sh), and your content and
+# config live in your own directory, not in this repo.
+set -uo pipefail
+
+TOOL="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+LIB="$TOOL/lib"
+
+# --- where the user's stuff lives ---------------------------------------------
+# Resolution order: $TACK_HOME, ~/.config/tack, else the tool dir itself
+# (so a plain `git clone && ./tack sync` fork-style setup also works).
+TACK_HOME="${TACK_HOME:-}"
+if [[ -z "$TACK_HOME" ]]; then
+  if   [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/tack/tack.conf" ]]; then
+    TACK_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/tack"
+  elif [[ -f "$TOOL/tack.conf" ]]; then
+    TACK_HOME="$TOOL"
+  else
+    TACK_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/tack"
+  fi
+fi
+
+# Defaults, overridable by tack.conf.
+CORE="$TACK_HOME/core"
+PROFILE=""
+SECRETS_FILE="$TACK_HOME/local/secrets.env"
+HARNESS_DIRS=()
+
+[[ -f "$TACK_HOME/tack.conf" ]] && source "$TACK_HOME/tack.conf"
+
+# Stock plugins ship with the tool; the user's own come after so a same-named
+# file overrides the stock one entirely.
+HARNESS_DIRS=("$TOOL/harnesses" "$TACK_HOME/harnesses" "$TACK_HOME/local/harnesses" "${HARNESS_DIRS[@]:-}")
+
+PROFILE="${TACK_PROFILE:-$PROFILE}"
+[[ -z "$PROFILE" && -f "$TACK_HOME/local/profile" ]] && PROFILE="$(<"$TACK_HOME/local/profile")"
+PROFILE="${PROFILE:-default}"
+
+DRY=0; ONLY=""; VERBOSE=0
+
+# --- output -------------------------------------------------------------------
+if [[ -t 1 ]]; then C_OK=$'\033[32m'; C_WARN=$'\033[33m'; C_ERR=$'\033[31m'; C_DIM=$'\033[2m'; C_B=$'\033[1m'; C_0=$'\033[0m'
+else C_OK=; C_WARN=; C_ERR=; C_DIM=; C_B=; C_0=; fi
+say()  { printf '%s\n' "$*"; }
+hdr()  { printf '%s%s%s\n' "$C_B" "$*" "$C_0"; }
+dim()  { printf '%s%s%s\n' "$C_DIM" "$*" "$C_0"; }
+note() { printf '  %s%-7s%s%s\n' "$C_OK" "$1" "$C_0" "$2"; }
+warn() { printf '  %swarn%s   %s\n' "$C_WARN" "$C_0" "$*" >&2; }
+die()  { printf '%serror%s %s\n' "$C_ERR" "$C_0" "$*" >&2; exit 1; }
+
+source "$LIB/dsl.sh"
+source "$LIB/engine.sh"
+
+# Later dirs win: collect by basename, last one found is used.
+resolve_plugins() {
+  declare -A pick=(); local d f n order=()
+  for d in "${HARNESS_DIRS[@]}"; do
+    [[ -n "$d" && -d "$d" ]] || continue
+    shopt -s nullglob
+    for f in "$d"/*.sh; do
+      n="$(basename "$f" .sh)"
+      [[ -v pick[$n] ]] || order+=("$n")
+      pick[$n]="$f"
+    done
+    shopt -u nullglob
+  done
+  for n in "${order[@]}"; do printf '%s\n' "${pick[$n]}"; done
+}
+
+# --- commands -----------------------------------------------------------------
+cmd_sync() {
+  [[ -d "$CORE" ]] || die "no core/ at $CORE -- run 'tack init' first"
+  hdr "profile ${C_OK}$PROFILE${C_0}${C_B}   config $TACK_HOME$( ((DRY)) && printf '   %s(dry run)%s' "$C_WARN" "$C_0")"
+  local f n=0
+  while IFS= read -r f; do run_harness "$f"; ((n++)); done < <(resolve_plugins)
+  ((n)) || warn "no harness plugins found in: ${HARNESS_DIRS[*]}"
+}
+
+cmd_status() {
+  say "profile:  $PROFILE"
+  say "config:   $TACK_HOME"
+  say "core:     $CORE"
+  say ""
+  local f pair dest t c
+  while IFS= read -r f; do
+    h_reset; source "$f"; [[ -n "$H_NAME" ]] || H_NAME="$(basename "$f" .sh)"
+    local present=1
+    case "$H_PROBE_KIND" in
+      cmd)  command -v "$H_PROBE" >/dev/null 2>&1 || present=0;;
+      path) [[ -e "$(h_expand "$H_PROBE")" ]]     || present=0;;
+    esac
+    if ((!present)); then printf '%s  %-10s not installed%s\n' "$C_DIM" "$H_NAME" "$C_0"; continue; fi
+    c=0
+    for pair in "${H_LINK_DIRS[@]}" "${H_LINK_FILES[@]}"; do
+      dest="${pair#*|}"
+      if [[ -d "$dest" ]]; then
+        shopt -s nullglob
+        for t in "$dest"/*; do [[ -L "$t" && "$(readlink "$t")" == "$CORE"/* ]] && ((c++)); done
+        shopt -u nullglob
+      elif [[ -L "$dest" && "$(readlink "$dest")" == "$CORE"/* ]]; then ((c++)); fi
+    done
+    printf '%s  %-10s%s %d linked   %s\n' "$C_OK" "$H_NAME" "$C_0" "$c" "${H_CFG_PATH:+cfg: $H_CFG_FMT}"
+  done < <(resolve_plugins)
+}
+
+cmd_doctor() {
+  local bad=0 f pair dest t
+  while IFS= read -r f; do
+    h_reset; source "$f"
+    for pair in "${H_LINK_DIRS[@]}"; do
+      dest="${pair#*|}"; [[ -d "$dest" ]] || continue
+      shopt -s nullglob
+      for t in "$dest"/*; do
+        [[ -L "$t" && ! -e "$t" ]] && { warn "dangling: $t -> $(readlink "$t")"; bad=1; }
+      done
+      shopt -u nullglob
+    done
+  done < <(resolve_plugins)
+
+  if [[ -d "$CORE" ]]; then
+    while IFS= read -r hit; do
+      warn "possible secret in tracked file: $hit"; bad=1
+    done < <(grep -rIlE '(sk-[A-Za-z0-9]|ctx7sk-|ghp_|gho_|AIza)[A-Za-z0-9_-]{10,}' "$CORE" 2>/dev/null || true)
+  fi
+  [[ -f "$SECRETS_FILE" ]] || warn "no $SECRETS_FILE -- \${VAR} refs render empty"
+  ((bad)) || say "${C_OK}all good${C_0}"
+}
+
+cmd_adopt() {
+  local path="${1:?usage: tack adopt <path> [core-subdir]}" sub="${2:-skills}"
+  [[ -e "$path" ]] || die "no such path: $path"
+  [[ -L "$path" ]] && die "$path is already a symlink"
+  local name; name="$(basename "$path")"
+  ((DRY)) && { say "would move $path -> $CORE/$sub/$name and link back"; return; }
+  mkdir -p "$CORE/$sub"
+  mv "$path" "$CORE/$sub/$name"
+  ln -s "$CORE/$sub/$name" "$path"
+  note "adopt" "$CORE/$sub/$name"
+  note "link" "$path"
+}
+
+cmd_init() {
+  [[ -e "$TACK_HOME/tack.conf" ]] && die "$TACK_HOME/tack.conf already exists"
+  mkdir -p "$CORE"/{skills,commands,agents,bin,hooks} "$TACK_HOME"/{harnesses,local/harnesses}
+  cp -n "$TOOL/examples/tack.conf" "$TACK_HOME/tack.conf"
+  cp -n "$TOOL/examples/core/settings.json" "$CORE/settings.json" 2>/dev/null
+  cp -n "$TOOL/examples/core/mcp.json" "$CORE/mcp.json" 2>/dev/null
+  cp -n "$TOOL/examples/core/AGENTS.md" "$CORE/AGENTS.md" 2>/dev/null
+  cp -n "$TOOL/examples/gitignore" "$TACK_HOME/.gitignore" 2>/dev/null
+  say "initialised ${C_OK}$TACK_HOME${C_0}"
+  say "  put your skills in $CORE/skills, then: tack sync"
+  say "  this directory is what you commit and share between machines"
+}
+
+usage() { cat <<'U'
+tack -- one set of agent tooling, every harness
+
+  sync                    link core/ into each installed harness, render configs
+  status                  what each harness has linked
+  doctor                  dangling links, leaked secrets, missing local config
+  init                    scaffold a config directory you can commit
+  adopt <path> [subdir]   move an existing file/dir into core/ and link it back
+  harnesses               list plugins and where each was found
+
+options
+  -n, --dry-run           show what would change, touch nothing
+  -p, --profile P         override profile (env TACK_PROFILE, local/profile)
+  -H, --harness NAME      restrict to one harness
+  -v, --verbose           show unchanged and profile-skipped entries
+
+environment
+  TACK_HOME            your config directory (default ~/.config/tack)
+  TACK_PROFILE         active profile
+U
+}
+
+cmd_harnesses() {
+  local f
+  while IFS= read -r f; do
+    h_reset; source "$f"; [[ -n "$H_NAME" ]] || H_NAME="$(basename "$f" .sh)"
+    printf '  %-10s %s\n' "$H_NAME" "$C_DIM$f$C_0"
+  done < <(resolve_plugins)
+}
+
+CMD="${1:-}"; shift 2>/dev/null || true
+ARGS=()
+while (($#)); do case "$1" in
+  -n|--dry-run) DRY=1;;
+  -p|--profile) PROFILE="$2"; shift;;
+  -H|--harness) ONLY="$2"; shift;;
+  -v|--verbose) VERBOSE=1;;
+  -h|--help) usage; exit 0;;
+  *) ARGS+=("$1");;
+esac; shift; done
+
+case "$CMD" in
+  sync)      cmd_sync;;
+  status)    cmd_status;;
+  doctor)    cmd_doctor;;
+  init)      cmd_init;;
+  adopt)     cmd_adopt "${ARGS[@]}";;
+  harnesses) cmd_harnesses;;
+  ""|help)   usage;;
+  *)         die "unknown command: $CMD (try 'tack help')";;
+esac

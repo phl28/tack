@@ -1,0 +1,14 @@
+{
+  "_comment": "MCP servers, once. Each harness's plugin says where these get written (config_mcp). ${VARS} resolve from local/secrets.env, so no key is ever committed. profiles gates a server to some machines.",
+
+  "context7": {
+    "command": "npx",
+    "args": ["-y", "@upstash/context7-mcp", "--api-key", "${CONTEXT7_API_KEY}"]
+  },
+
+  "internal-wiki": {
+    "command": "npx",
+    "args": ["-y", "some-internal-mcp", "--token", "${WORK_TOKEN}"],
+    "profiles": ["work"]
+  }
+}
