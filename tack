@@ -236,7 +236,7 @@ cmd_init() {
   say "initialised ${C_OK}$TACK_HOME${C_0}"
   say ""
   say "  ${C_B}1.${C_0} teach tack a tool      ${C_DIM}tack new${C_0}   (or copy one: ${C_DIM}tack add${C_0})"
-  say "  ${C_B}2.${C_0} bring in what you have ${C_DIM}tack adopt ~/.claude/skills/my-skill${C_0}"
+  say "  ${C_B}2.${C_0} bring in what you have ${C_DIM}tack import${C_0}   (resolves duplicate copies)"
   say "  ${C_B}3.${C_0} link it everywhere     ${C_DIM}tack sync${C_0}"
   say "  ${C_B}4.${C_0} share it               ${C_DIM}tack remote git@github.com:you/tack-config.git${C_0}"
   say "                            ${C_DIM}tack push${C_0}"
