@@ -6,7 +6,7 @@ Horse *tack* is the gear you put on a harness. Claude Code, Codex, opencode, pi
 and whatever ships next month are just harnesses: different system prompts,
 different subscriptions, different models. Your actual tooling should not be
 duplicated five times to suit them — nor rewritten when one of them is retired
-and replaced, which happens (Gemini CLI, June 2026).
+and replaced.
 
 ```
 $ tack sync
