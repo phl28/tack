@@ -60,6 +60,7 @@ source "$LIB/engine.sh"
 source "$LIB/new.sh"
 source "$LIB/verify.sh"
 source "$LIB/git.sh"
+source "$LIB/import.sh"
 
 # Later dirs win: collect by basename, last one found is used.
 resolve_plugins() {
@@ -84,6 +85,13 @@ cmd_sync() {
   local f n=0
   while IFS= read -r f; do run_harness "$f"; ((n++)); done < <(resolve_plugins)
   ((n)) || warn "no harness plugins found in: ${HARNESS_DIRS[*]}"
+
+  local pending; pending="$(import_pending)"
+  if [[ -n "$pending" ]]; then
+    say ""
+    say "${C_DIM}$pending file(s) in your harness directories are not managed by tack."
+    say "Bring them in, resolving any that have drifted apart: ${C_0}tack import${C_DIM}${C_0}"
+  fi
 }
 
 cmd_status() {
@@ -134,6 +142,8 @@ cmd_doctor() {
     done < <(grep -rIlE '(sk-[A-Za-z0-9]|ctx7sk-|ghp_|gho_|AIza)[A-Za-z0-9_-]{10,}' "$CORE" 2>/dev/null || true)
   fi
   [[ -f "$SECRETS_FILE" ]] || warn "no $SECRETS_FILE -- \${VAR} refs render empty"
+  local pending; pending="$(import_pending)"
+  [[ -n "$pending" ]] && { warn "$pending unmanaged file(s) in harness dirs -- 'tack import' takes them over"; bad=1; }
   ((bad)) || say "${C_OK}all good${C_0}"
 }
 
@@ -248,6 +258,9 @@ tack -- one set of agent tooling, every harness
   remote [url]            show or set where your config is shared (a private
                           GitHub repo works well)
 
+  import                  take over files already in your harness directories,
+                          resolving copies that have drifted apart
+
   new [name]              write a harness plugin by answering questions
   add [name|path|url]     copy a harness plugin into your config (no args lists
                           the bundled examples)
@@ -292,6 +305,7 @@ case "$CMD" in
   adopt)     cmd_adopt "${ARGS[@]}";;
   add)       cmd_add "${ARGS[@]:-}";;
   new)       cmd_new "${ARGS[@]:-}";;
+  import)    open_tty || die "tack import needs a terminal"; cmd_import;;
   push)      cmd_push "${ARGS[*]:-}";;
   pull)      cmd_pull;;
   remote)    cmd_remote "${ARGS[@]:-}";;

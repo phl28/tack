@@ -30,12 +30,40 @@ That creates `~/.config/tack` — the thing you will share between machines. It 
 empty except for a skeleton, so bring in what you already have:
 
 ```sh
-tack adopt ~/.claude/skills/my-skill      # moves it in, symlinks it back
-tack adopt ~/.codex/prompts/review.md commands
+tack import
 ```
 
-`adopt` **moves** the file into your config and leaves a symlink behind, so the
-tool you took it from carries on working — same file, new home.
+This finds every skill and prompt sitting in your harness directories and takes
+them over — moving each into your config and symlinking it back, so the tool it
+came from carries on working with the same file.
+
+The interesting part is what happens when you have **the same skill in three
+places** and edited it in only one, which is the normal state of affairs before
+you have a tool like this. Identical copies are merged silently — there is no
+decision to make. Ones that have actually drifted apart are shown to you:
+
+```
+⚠  skills/deploy exists in more than one version:
+
+  [1] ~/.claude/skills/deploy
+      modified 2026-03-14 09:21, 12K
+  [2] ~/.codex/skills/deploy, ~/.agents/skills/deploy
+      modified 2026-01-02 17:40, 11K
+
+  Keep which? [1-2], (d)iff, (s)kip [1]: d
+
+    --- ~/.claude/skills/deploy/SKILL.md
+    +++ ~/.codex/skills/deploy/SKILL.md
+    @@ -12,7 +12,6 @@
+    -  Roll back with `deploy --undo` if the smoke test fails.
+```
+
+Pick one and every copy becomes a symlink to it. So you push **one** version of
+each thing, not three near-identical ones — and the same command sorts out a
+second machine that already had its own setup before you cloned onto it.
+
+For a single file, `tack adopt ~/.claude/skills/my-skill` does the same thing
+without the scan.
 
 Now teach tack about the agent tools you use. It ships with support for none of
 them on purpose (more on that below), so this is how it learns:
@@ -92,6 +120,10 @@ tack sync
 
 No `tack init` — the clone *is* the setup. Every skill, prompt and harness plugin
 you had is now wired into every agent tool on the new machine.
+
+If that machine already had its own skills lying around, `tack sync` will refuse
+to overwrite them and tell you so. Run `tack import` and it will show you each
+one that differs from your config's version, side by side, and let you choose.
 
 ### Keeping in step
 
@@ -300,6 +332,8 @@ tack push [message]          commit and publish to your remote
 tack pull                    take other machines' changes, then re-link
 tack remote [url]            show or set where your config is shared
 
+tack import                  take over files already in your harness dirs,
+                             resolving copies that have drifted apart
 tack new [name]              write a harness plugin by answering questions
 tack add [name|path|url]     copy a harness plugin in (no args lists examples)
 tack adopt <path> [subdir]   move an existing file into core/ and link it back

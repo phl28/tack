@@ -49,7 +49,7 @@ link_entry() {
     warn "skip $target -> points outside your config ($cur)"; return 1
   fi
   if [[ -e "$target" ]]; then
-    warn "skip $target -> real file already there ('tack adopt' imports it)"; return 1
+    warn "skip $target -> a real file is already there ('tack import' takes it over)"; return 1
   fi
   ((DRY)) || { mkdir -p "$(dirname "$target")"; ln -s "$src" "$target"; }
   note "link" "$target"
