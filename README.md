@@ -2,10 +2,11 @@
 
 One set of skills, prompts and tools — every agent harness.
 
-Horse *tack* is the gear you put on a harness. Claude Code, Codex, opencode, pi,
-Gemini CLI and whatever ships next month are just harnesses: different system
-prompts, different subscriptions, different models. Your actual tooling should
-not be duplicated five times to suit them.
+Horse *tack* is the gear you put on a harness. Claude Code, Codex, opencode, pi
+and whatever ships next month are just harnesses: different system prompts,
+different subscriptions, different models. Your actual tooling should not be
+duplicated five times to suit them — nor rewritten when one of them is retired
+and replaced, which happens (Gemini CLI, June 2026).
 
 ```
 $ tack sync
@@ -16,9 +17,9 @@ profile personal   config ~/.config/tack
 ==> codex
   link   ~/.codex/skills/fetch-plane
   render ~/.codex/config.toml
-==> gemini
-  link   ~/.gemini/GEMINI.md
-  render ~/.gemini/settings.json
+==> pi
+  link   ~/.pi/agent/skills/fetch-plane
+  link   ~/.pi/AGENTS.md
 ```
 
 ## Why not just symlink the whole directory

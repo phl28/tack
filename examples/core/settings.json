@@ -30,10 +30,6 @@
     "opencode": {
       "$schema": "https://opencode.ai/config.json",
       "autoupdate": false
-    },
-
-    "gemini": {
-      "security": { "auth": { "selectedType": "oauth-personal" } }
     }
   }
 }
